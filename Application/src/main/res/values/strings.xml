@@ -35,4 +35,14 @@
     <string name="menu_disconnect">Disconnect</string>
     <string name="menu_scan">Scan</string>
     <string name="menu_stop">Stop</string>
+
+    <!-- Notifications -->
+    <string name="channel_name">BLE Data Notification category</string>
+    <string name="channel_description">a channel for BLE Data Notification</string>
+    <string name="notification_title">BLE Data Received</string>
+
+    <!-- -->
+    <string name="file_opened"> Saving file is opened</string>
+    <string name="file_closed"> Saving file is closed</string>
+    <string name="file_error"> Saving file is null or error</string>
 </resources>

@@ -28,12 +28,18 @@ import android.bluetooth.BluetoothManager;
 import android.bluetooth.BluetoothProfile;
 import android.content.Context;
 import android.content.Intent;
+import android.net.Uri;
 import android.os.Binder;
 import android.os.Build;
 import android.os.IBinder;
+import android.provider.DocumentsContract;
 import android.support.annotation.RequiresApi;
 import android.util.Log;
+import android.widget.Toast;
 
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.util.List;
 import java.util.UUID;
 
@@ -48,11 +54,15 @@ public class BluetoothLeService extends Service {
     private BluetoothAdapter mBluetoothAdapter;
     private String mBluetoothDeviceAddress;
     private BluetoothGatt mBluetoothGatt;
+    private BluetoothGattDescriptor mDescriptor;
     private int mConnectionState = STATE_DISCONNECTED;
+
+    //private FileOutputStream mDataFileOutStream;
 
     private static final int STATE_DISCONNECTED = 0;
     private static final int STATE_CONNECTING = 1;
     private static final int STATE_CONNECTED = 2;
+
 
     public final static String ACTION_GATT_CONNECTED =
             "com.example.bluetooth.le.ACTION_GATT_CONNECTED";
@@ -62,11 +72,18 @@ public class BluetoothLeService extends Service {
             "com.example.bluetooth.le.ACTION_GATT_SERVICES_DISCOVERED";
     public final static String ACTION_DATA_AVAILABLE =
             "com.example.bluetooth.le.ACTION_DATA_AVAILABLE";
+    public final static String ACTION_DATA_WRITABLE =
+            "com.example.bluetooth.le.ACTION_DATA_WRITABLE";
     public final static String EXTRA_DATA =
             "com.example.bluetooth.le.EXTRA_DATA";
 
     public final static UUID UUID_HEART_RATE_MEASUREMENT =
             UUID.fromString(SampleGattAttributes.HEART_RATE_MEASUREMENT);
+    public final static UUID UUID_BLE_UART_TX =
+            UUID.fromString(SampleGattAttributes.BLE_UART_TX);
+    public final static UUID UUID_BLE_UART_RX =
+            UUID.fromString(SampleGattAttributes.BLE_UART_RX);
+
 
     // Implements callback methods for GATT events that the app cares about.  For example,
     // connection change and services discovered.
@@ -143,6 +160,23 @@ public class BluetoothLeService extends Service {
             final int heartRate = characteristic.getIntValue(format, 1);
             Log.d(TAG, String.format("Received heart rate: %d", heartRate));
             intent.putExtra(EXTRA_DATA, String.valueOf(heartRate));
+        } else if (UUID_BLE_UART_TX.equals(characteristic.getUuid())) {
+            final String BLEData = characteristic.getStringValue(0);
+            Log.d(TAG, String.format("BLE data received: %s.", BLEData));
+
+//            //TODO: data saving
+//            try {
+//                mDataFileOutStream.write(BLEData.getBytes());
+//                mDataFileOutStream.flush();
+//            } catch (IOException e) {
+//                Log.e(TAG, Log.getStackTraceString(e));
+//            }
+
+            intent.putExtra(EXTRA_DATA, BLEData);
+        } else if (UUID_BLE_UART_RX.equals(characteristic.getUuid())) {//TODO: send commands...
+            characteristic.setValue("Android connected.");
+            Log.d(TAG, "BLE data written.");
+            intent.putExtra(EXTRA_DATA, "UUID_BLE_UART_TX");
         } else {
             // For all other profiles, writes the data formatted in HEX.
             final byte[] data = characteristic.getValue();
@@ -215,6 +249,16 @@ public class BluetoothLeService extends Service {
      */
     @RequiresApi(api = Build.VERSION_CODES.M)
     public boolean connect(final String address) {
+
+//        // TODO: save data to file
+//        try {
+//            mDataFileOutStream = openFileOutput("BLE_Received_Data.txt", Context.MODE_APPEND);
+//        } catch (FileNotFoundException e) {
+//            Log.e(TAG, Log.getStackTraceString(e));
+//        }
+//        Log.d(TAG, "Saved file created.");
+//        Toast.makeText(this, R.string.file_opened + " " + getFilesDir().toString() + "BLE_Received_Data.txt",Toast.LENGTH_SHORT).show();
+
         if (mBluetoothAdapter == null || address == null) {
             Log.w(TAG, "BluetoothAdapter not initialized or unspecified address.");
             return false;
@@ -257,6 +301,14 @@ public class BluetoothLeService extends Service {
             Log.w(TAG, "BluetoothAdapter not initialized");
             return;
         }
+//        // TODO: close data file
+//        try {
+//            mDataFileOutStream.close();
+//        } catch (IOException e) {
+//            Log.e(TAG, Log.getStackTraceString(e));
+//        }
+//        Toast.makeText(this, R.string.file_closed,Toast.LENGTH_SHORT).show();
+
         mBluetoothGatt.disconnect();
     }
 
@@ -269,6 +321,15 @@ public class BluetoothLeService extends Service {
             return;
         }
         mBluetoothGatt.close();
+
+//        // TODO: close data file
+//        try {
+//            mDataFileOutStream.close();
+//        } catch (IOException e) {
+//            Log.e(TAG, Log.getStackTraceString(e));
+//        }
+//        Toast.makeText(this, R.string.file_closed,Toast.LENGTH_SHORT).show();
+
         mBluetoothGatt = null;
     }
 
@@ -303,6 +364,11 @@ public class BluetoothLeService extends Service {
 
         // This is specific to Heart Rate Measurement.
         if (UUID_HEART_RATE_MEASUREMENT.equals(characteristic.getUuid())) {
+            BluetoothGattDescriptor descriptor = characteristic.getDescriptor(
+                    UUID.fromString(SampleGattAttributes.CLIENT_CHARACTERISTIC_CONFIG));
+            descriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
+            mBluetoothGatt.writeDescriptor(descriptor);
+        } else if (UUID_BLE_UART_TX.equals(characteristic.getUuid())) {
             BluetoothGattDescriptor descriptor = characteristic.getDescriptor(
                     UUID.fromString(SampleGattAttributes.CLIENT_CHARACTERISTIC_CONFIG));
             descriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
