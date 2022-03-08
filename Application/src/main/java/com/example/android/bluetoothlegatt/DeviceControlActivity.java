@@ -53,7 +53,9 @@ import android.widget.Toast;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -69,6 +71,7 @@ public class DeviceControlActivity extends Activity {
 
     public static final String EXTRAS_DEVICE_NAME = "DEVICE_NAME";
     public static final String EXTRAS_DEVICE_ADDRESS = "DEVICE_ADDRESS";
+
     public static final String CHANNEL_ID = "CHANNEL_ALARM_DATA";
     public static final int NOTIFICATION_ID = 42;
 
@@ -92,7 +95,6 @@ public class DeviceControlActivity extends Activity {
     private FileOutputStream mFileOutputStream;
 
     // for open and saving data
-
     private void createFile() {
         Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
@@ -177,7 +179,13 @@ public class DeviceControlActivity extends Activity {
         }
     };
 
-    // Handles various events fired by the Service.
+//    public static String stampToDate(long time){
+//        @SuppressLint("SimpleDateFormat") SimpleDateFormat format = new SimpleDateFormat("HH:mm:ss ");
+//        //	    System.out.println("日期格式---->" + times);
+//        return format.format(new Date(time * 1000L));
+//    }
+
+        // Handles various events fired by the Service.
     // ACTION_GATT_CONNECTED: connected to a GATT server.
     // ACTION_GATT_DISCONNECTED: disconnected from a GATT server.
     // ACTION_GATT_SERVICES_DISCOVERED: discovered GATT services.
@@ -210,6 +218,9 @@ public class DeviceControlActivity extends Activity {
                 //TODO:...
                 if (mFileOutputStream != null) {
                     try {
+                        // add date information to output file
+                        //String date = stampToDate(System.currentTimeMillis());
+                        //mFileOutputStream.write((date + data).getBytes());
                         mFileOutputStream.write(data.getBytes());
                         mFileOutputStream.flush();
                     } catch (IOException e) {
@@ -326,6 +337,7 @@ public class DeviceControlActivity extends Activity {
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
         getMenuInflater().inflate(R.menu.gatt_services, menu);
+        menu.findItem(R.id.menu_set_file).setVisible(false);
         if (mConnected) {
             menu.findItem(R.id.menu_connect).setVisible(false);
             menu.findItem(R.id.menu_disconnect).setVisible(true);
@@ -368,6 +380,7 @@ public class DeviceControlActivity extends Activity {
         }
     }
 
+    // Bumping out the Notification box
     private void createNotificationChannel() {
         // Create the NotificationChannel, but only on API 26+ because
         // the NotificationChannel class is new and not in the support library

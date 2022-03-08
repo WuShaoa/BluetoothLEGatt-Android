@@ -17,6 +17,7 @@
 package com.example.android.bluetoothlegatt;
 
 import android.Manifest;
+import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.ListActivity;
 import android.bluetooth.BluetoothAdapter;
@@ -28,19 +29,27 @@ import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.Parcelable;
 import android.support.annotation.NonNull;
 import android.support.v4.content.ContextCompat;
+import android.view.ActionMode;
+import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.AbsListView;
+import android.widget.AdapterView;
 import android.widget.BaseAdapter;
+import android.widget.CheckBox;
 import android.widget.ListView;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 /**
  * Activity for scanning and displaying available Bluetooth LE devices.
@@ -94,6 +103,16 @@ public class DeviceScanActivity extends ListActivity {
                         REQUEST_ENABLE_LOCATION);
             }
         }
+
+        // 注册长按事件，实现多选设备功能
+        // register for long select for multi-device connection
+        ListView lv = this.getListView();
+        lv.setChoiceMode(ListView.CHOICE_MODE_MULTIPLE_MODAL);
+        lv.setMultiChoiceModeListener(new MultiChoiceModeListener(lv)); //自动调用 OnItemLongClickListener
+        lv.setOnItemLongClickListener((parent, view, position, id) -> {
+            Toast.makeText(view.getContext(), "点击条目", Toast.LENGTH_SHORT).show();
+            return true;
+        });
     }
 
     @Override
@@ -215,6 +234,7 @@ public class DeviceScanActivity extends ListActivity {
     private class LeDeviceListAdapter extends BaseAdapter {
         private ArrayList<BluetoothDevice> mLeDevices;
         private LayoutInflater mInflator;
+        private boolean mCheckable;
 
         public LeDeviceListAdapter() {
             super();
@@ -226,6 +246,17 @@ public class DeviceScanActivity extends ListActivity {
             if(!mLeDevices.contains(device)) {
                 mLeDevices.add(device);
             }
+        }
+
+        public void removeDevice(BluetoothDevice device) {
+            if(mLeDevices.contains(device)) {
+                mLeDevices.remove(device);
+            }
+        }
+
+        //用来设置是否CheckBox可见
+        private void setCheckable(boolean checkable) {
+            mCheckable = checkable;
         }
 
         public BluetoothDevice getDevice(int position) {
@@ -260,6 +291,7 @@ public class DeviceScanActivity extends ListActivity {
                 viewHolder = new ViewHolder();
                 viewHolder.deviceAddress = (TextView) view.findViewById(R.id.device_address);
                 viewHolder.deviceName = (TextView) view.findViewById(R.id.device_name);
+                viewHolder.checkBox = (CheckBox) view.findViewById(R.id.selected_check_box);
                 view.setTag(viewHolder);
             } else {
                 viewHolder = (ViewHolder) view.getTag();
@@ -272,6 +304,15 @@ public class DeviceScanActivity extends ListActivity {
             else
                 viewHolder.deviceName.setText(R.string.unknown_device);
             viewHolder.deviceAddress.setText(device.getAddress());
+
+            //可见性和选中状态
+            //View处在不停的loop中？
+            if (mCheckable) {
+                viewHolder.checkBox.setVisibility(View.VISIBLE);
+            } else {
+                viewHolder.checkBox.setVisibility(View.INVISIBLE);
+            }
+            viewHolder.checkBox.setChecked(((ListView) viewGroup).isItemChecked(i));
 
             return view;
         }
@@ -296,5 +337,86 @@ public class DeviceScanActivity extends ListActivity {
     static class ViewHolder {
         TextView deviceName;
         TextView deviceAddress;
+        CheckBox checkBox;
+    }
+
+    // 多选
+    private class MultiChoiceModeListener implements AbsListView.MultiChoiceModeListener {
+        private ListView mListView;
+        private TextView mTitleTextView;
+        private List<BluetoothDevice> mSelectedItems = new ArrayList<>();
+
+        private MultiChoiceModeListener(ListView listView) {
+            mListView = listView;
+        }
+
+        @Override
+        public void onItemCheckedStateChanged(ActionMode mode, int position, long id, boolean checked) {
+            if (mLeDeviceListAdapter.getDevice(position) != null){
+                mSelectedItems.add(mLeDeviceListAdapter.getDevice(position));
+            }
+            mTitleTextView.setText("已选择 " + mListView.getCheckedItemCount() + " 项");
+            mLeDeviceListAdapter.notifyDataSetChanged();
+        }
+
+        @Override
+        public boolean onCreateActionMode(ActionMode mode, Menu menu) {
+            mode.getMenuInflater().inflate(R.menu.check_task_priority, menu);
+
+            @SuppressLint("InflateParams")
+            View multiSelectActionBarView = LayoutInflater.from(DeviceScanActivity.this)
+                    .inflate(R.layout.action_mode_bar, null);
+            mode.setCustomView(multiSelectActionBarView);
+            mTitleTextView = multiSelectActionBarView.findViewById(R.id.title);
+            mTitleTextView.setText("已选择 0 项");
+
+            mLeDeviceListAdapter.setCheckable(true);
+            mLeDeviceListAdapter.notifyDataSetChanged();
+            return true;
+        }
+
+        @Override
+        public boolean onPrepareActionMode(ActionMode mode, Menu menu) {
+            return false;
+        }
+
+        @Override
+        public boolean onActionItemClicked(ActionMode mode, MenuItem item) {
+            switch (item.getItemId()) {
+                case R.id.cancel:
+                    break;
+                case R.id.multi_ok:
+                    if (mScanning) {
+                        mBluetoothAdapter.stopLeScan(mLeScanCallback);
+                        mScanning = false;
+                    }
+
+                    if(mSelectedItems.isEmpty()) break;
+
+                    ArrayList<BluetoothLeData> deviceList = new ArrayList<>();
+                    final Intent intent = new Intent(DeviceScanActivity.this, MultiDeviceControlActivity.class);
+                    for (BluetoothDevice device : mSelectedItems) {
+                        BluetoothLeData deviceData = new BluetoothLeData();
+                        deviceData.setDeviceAddress(device.getAddress());
+                        deviceData.setDataPiece(device.getName());
+                        deviceList.add(deviceData);
+                    }
+                    intent.putParcelableArrayListExtra(MultiDeviceControlActivity.EXTRAS_DEVICE_LIST, deviceList);
+                    startActivity(intent);//TODO: 新建一个控制多设备的Activity
+                    break;
+                default:
+                    break;
+            }
+
+            mode.finish();
+            return true;
+        }
+
+        @Override
+        public void onDestroyActionMode(ActionMode mode) {
+            mSelectedItems.clear();
+            mLeDeviceListAdapter.setCheckable(false);
+            mLeDeviceListAdapter.notifyDataSetChanged();
+        }
     }
 }

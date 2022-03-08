@@ -21,8 +21,18 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:textSize="24dp"/>
-    <TextView android:id="@+id/device_address"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:textSize="12dp"/>
+
+    <TextView
+        android:id="@+id/device_address"
+        android:layout_width="match_parent"
+        android:layout_height="26dp"
+        android:textSize="12dp" />
+    <CheckBox
+        android:id="@+id/selected_check_box"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:clickable="false"
+        android:focusable="false"
+        android:visibility="invisible" />
 </LinearLayout>
