@@ -92,17 +92,20 @@ public class MultiDeviceControlActivity extends ListActivity {
     //private static final int CREATE_FILE = 1;
     // for open and saving data
     private void createFile(String address) {
-        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
-        intent.addCategory(Intent.CATEGORY_OPENABLE);
-        intent.setType("text/plain");
-        intent.putExtra(Intent.EXTRA_TITLE, address.replace(':','_')+".txt");
+        if(!mDeviceOutputFileDict.containsKey(address) || mDeviceOutputFileDict.get(address) == null) {
+            Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.setType("text/plain");
+            intent.putExtra(Intent.EXTRA_TITLE, address.replace(':', '_') + ".txt");
 
 //        // Optionally, specify a URI for the directory that should be opened in
 //        // the system file picker when your app creates the document.
 //        intent.putExtra(DocumentsContract.EXTRA_INITIAL_URI, pickerInitialUri);
 
-        startActivityForResult(intent, mMultiDeviceListAdapter.getItemId(address));
-
+            startActivityForResult(intent, mMultiDeviceListAdapter.getItemId(address)); // request code as item id
+        } else {
+            //pass
+        }
     }
 
     @SuppressLint("WrongConstant")
@@ -110,21 +113,21 @@ public class MultiDeviceControlActivity extends ListActivity {
     @Override
     public void onActivityResult(int requestCode, int resultCode,
                                  Intent resultData) {
-        if (requestCode < mMultiDeviceListAdapter.getCount()
+        if (requestCode <= mMultiDeviceListAdapter.getCount()
                 && resultCode == Activity.RESULT_OK) {
             // The result data contains a URI for the document or directory that
             // the user selected.
 
             if (resultData != null) {
-                Uri mInitialUri = resultData.getData();
+                Uri initialUri = resultData.getData();
                 final int takeFlags = resultData.getFlags()
                         & (Intent.FLAG_GRANT_READ_URI_PERMISSION
                         | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
                 // Check for the freshest data.
-                getContentResolver().takePersistableUriPermission(mInitialUri, takeFlags);
+                getContentResolver().takePersistableUriPermission(initialUri, takeFlags);
                 // Perform operations on the document using its URI.
                 try {
-                    FileOutputStream fo = new FileOutputStream(getContentResolver().openFileDescriptor(mInitialUri, "w").getFileDescriptor());
+                    FileOutputStream fo = new FileOutputStream(getContentResolver().openFileDescriptor(initialUri, "w").getFileDescriptor());
                     mDeviceOutputFileDict.put(mMultiDeviceListAdapter.getDevice(requestCode).getDeviceAddress(), fo);
                     Toast.makeText(this, R.string.file_created, Toast.LENGTH_SHORT).show();
                 } catch (FileNotFoundException e) {
@@ -151,52 +154,32 @@ public class MultiDeviceControlActivity extends ListActivity {
 //        } else {
 //            Toast.makeText(this, R.string.file_existed, Toast.LENGTH_SHORT).show();
 //        }
-        runOnUiThread(()-> createFile(address));
-        //激活TX特征Notify
-        if (!mDeviceNotifyCharacteristic.containsKey(address)) {
-            for (BluetoothGattService service : mBluetoothLeService.getSupportedGattServices(address)) {
-                for (BluetoothGattCharacteristic characteristic : service.getCharacteristics()) {
-                    if (characteristic.getUuid().toString().equalsIgnoreCase(SampleGattAttributes.BLE_UART_TX)) {//TO UPPER CASE
-                        mDeviceNotifyCharacteristic.put(address, characteristic);
-                        mBluetoothLeService.setCharacteristicNotification(
-                                address,
-                                characteristic, true);
-                        Log.d(TAG, "GATT PROPERTY_NOTIFY: " + address);
-                    }
-                }
-            }
-        } else {
-            mBluetoothLeService.setCharacteristicNotification(
-                    address,
-                    mDeviceNotifyCharacteristic.get(address), true);
+        createFile(address);
+        runOnUiThread(()-> {
+            //激活TX特征Notify
+            // DONE: - determine NOTIFY or READ!! : NOTIFY
+            if (!mDeviceNotifyCharacteristic.containsKey(address)) {
+               for (BluetoothGattService service : mBluetoothLeService.getSupportedGattServices(address)) {
+                   for (BluetoothGattCharacteristic characteristic : service.getCharacteristics()) {
+                       if (characteristic.getUuid().toString().equalsIgnoreCase(SampleGattAttributes.BLE_UART_TX)) {//TO IGNORE CASE
+                           mDeviceNotifyCharacteristic.put(address, characteristic);
+                            mBluetoothLeService.setCharacteristicNotification(
+                                    address,
+                                    characteristic,
+                                   true);
+                           Log.d(TAG, "GATT PROPERTY_NOTIFY: " + address);
+                       }
+                   }
+               }
+            } else {
+                mBluetoothLeService.setCharacteristicNotification(
+                        address,
+                        mDeviceNotifyCharacteristic.get(address),
+                        true);
             Log.d(TAG, "GATT PROPERTY_NOTIFY: " + address);
         }
+        });
     }
-
-//    @SuppressLint("WrongConstant")
-//    @RequiresApi(api = Build.VERSION_CODES.KITKAT)
-//    @Override
-//    public void onActivityResult(int requestCode, int resultCode,
-//                                 Intent resultData) {
-//        if (requestCode == CREATE_FILE
-//                && resultCode == Activity.RESULT_OK) {
-//            // The result data contains a URI for the document or directory that
-//            // the user selected.
-//            if (resultData != null) {
-//                mInitialUri = resultData.getData();
-//                mTakeFlags = resultData.getFlags()
-//                        & (Intent.FLAG_GRANT_READ_URI_PERMISSION
-//                        | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
-//
-//                // Perform operations on the document using its URI.
-//                Toast.makeText(this, R.string.uri_initialized, Toast.LENGTH_SHORT).show();
-//            }
-//        }
-//    }
-
-//    private FileOutputStream getOutputStream(String address) {
-//        return mDeviceOutputFile.get(address);
-//    }
 
     //must called when OutPutStream should be closed on disconnected...
     private void closeOutputStream(String address) {
@@ -258,11 +241,12 @@ public class MultiDeviceControlActivity extends ListActivity {
             final String address = intent.getStringExtra(BluetoothLeService.EXTRA_ADDRESS);
             if (BluetoothLeService.ACTION_GATT_CONNECTED.equals(action)) {
                 //mConnected = true;
-                updateConnectionState(address, true);
+                mDeviceConnectionState.put(address, true);//updateConnectionState(address, true);
                 invalidateOptionsMenu();
             } else if (BluetoothLeService.ACTION_GATT_DISCONNECTED.equals(action)) {
                 //mConnected = false;
-                updateConnectionState(address, false);
+                mDeviceConnectionState.put(address, false);//updateConnectionState(address, false);
+                mDeviceDataValue.remove(address);
                 invalidateOptionsMenu();
                 clearUI(address);
                 //TODO: ...
@@ -275,7 +259,7 @@ public class MultiDeviceControlActivity extends ListActivity {
                 openOutputStream(address);
             } else if (BluetoothLeService.ACTION_DATA_AVAILABLE.equals(action)) {
                 String data = intent.getStringExtra(BluetoothLeService.EXTRA_DATA);
-                displayData(address, data);
+                mDeviceDataValue.put(address, data);//displayData(address, data); // decouple data receive and data display (buffer)
                 // write to file
                 try {
                     //mReadWriteLock.readLock().lock();
@@ -283,19 +267,13 @@ public class MultiDeviceControlActivity extends ListActivity {
                     Objects.requireNonNull(mDeviceOutputFileDict.get(address)).flush();
                     //mReadWriteLock.readLock().unlock();
                 } catch (IOException e) {
+                    Toast.makeText(context, R.string.file_error, Toast.LENGTH_SHORT).show();
                     Log.e(TAG, "onReceive: ble data or fos error");
+
                     e.printStackTrace();
                 }
                 invalidateOptionsMenu();
-//                try {
-//                    FileOutputStream fos = getOutputStream(address);
-//                    mBleFileOutStreamDict.put(address, fos);
-//                    fos.write(data.getBytes());
-//                    fos.flush();
-//                } catch (IOException e) {
-//                    e.printStackTrace();
-//                }
-                //else { Toast.makeText(this, R.string.file_error, Toast.LENGTH_SHORT).show(); }
+                //else { }
                 // TODO：处理危险范围...再显示
                 //notifyData(intent.getStringExtra(BluetoothLeService.EXTRA_DATA));
             }
@@ -303,68 +281,7 @@ public class MultiDeviceControlActivity extends ListActivity {
         }
     };
 
-    // Demonstrates how to iterate through the supported GATT Services/Characteristics.
-    // In this sample, we populate the data structure that is bound to the ExpandableListView
-    // on the UI.
-//    private void displayGattServices(String address, List<BluetoothGattService> gattServices) {
-//        if (gattServices == null) return;
-//        String uuid = null;
-//        String unknownServiceString = getResources().getString(R.string.unknown_service);
-//        String unknownCharaString = getResources().getString(R.string.unknown_characteristic);
-//        ArrayList<HashMap<String, String>> gattServiceData = new ArrayList<HashMap<String, String>>();
-//        ArrayList<ArrayList<HashMap<String, String>>> gattCharacteristicData
-//                = new ArrayList<ArrayList<HashMap<String, String>>>();
-//        ArrayList<ArrayList<BluetoothGattCharacteristic>> mGattCharacteristics = new ArrayList<ArrayList<BluetoothGattCharacteristic>>();
-//        mReadWriteLock.readLock().lock();
-//        ExpandableListView mGattServicesList = mDeviceGattServicesListView.get(address);
-//        mReadWriteLock.readLock().unlock();
-//
-//        // Loops through available GATT Services.
-//        for (BluetoothGattService gattService : gattServices) {
-//            HashMap<String, String> currentServiceData = new HashMap<String, String>();
-//            uuid = gattService.getUuid().toString();
-//            currentServiceData.put(
-//                    LIST_NAME, SampleGattAttributes.lookup(uuid.toUpperCase(), unknownServiceString));
-//            currentServiceData.put(LIST_UUID, uuid);
-//            gattServiceData.add(currentServiceData);
-//
-//            ArrayList<HashMap<String, String>> gattCharacteristicGroupData =
-//                    new ArrayList<HashMap<String, String>>();
-//            List<BluetoothGattCharacteristic> gattCharacteristics =
-//                    gattService.getCharacteristics();
-//            ArrayList<BluetoothGattCharacteristic> charas =
-//                    new ArrayList<BluetoothGattCharacteristic>();
-//
-//            // Loops through available Characteristics.
-//            for (BluetoothGattCharacteristic gattCharacteristic : gattCharacteristics) {
-//                charas.add(gattCharacteristic);
-//                HashMap<String, String> currentCharaData = new HashMap<String, String>();
-//                uuid = gattCharacteristic.getUuid().toString();
-//                currentCharaData.put(
-//                        LIST_NAME, SampleGattAttributes.lookup(uuid.toUpperCase(), unknownCharaString));
-//                currentCharaData.put(LIST_UUID, uuid);
-//                gattCharacteristicGroupData.add(currentCharaData);
-//            }
-//            mGattCharacteristics.add(charas);
-//            gattCharacteristicData.add(gattCharacteristicGroupData);
-//        }
-//
-//        SimpleExpandableListAdapter gattServiceAdapter = new SimpleExpandableListAdapter(
-//                this,
-//                gattServiceData,
-//                android.R.layout.simple_expandable_list_item_2,
-//                new String[]{LIST_NAME, LIST_UUID},
-//                new int[]{android.R.id.text1, android.R.id.text2},
-//                gattCharacteristicData,
-//                android.R.layout.simple_expandable_list_item_2,
-//                new String[]{LIST_NAME, LIST_UUID},
-//                new int[]{android.R.id.text1, android.R.id.text2}
-//        );
-//        mGattServicesList.setAdapter(gattServiceAdapter);
-//        mReadWriteLock.writeLock().lock();
-//        mDeviceGattCharacteristics.put(address, mGattCharacteristics);
-//        mReadWriteLock.writeLock().unlock();
-//    }
+
 
     private void clearUI(String address) {
         //mReadWriteLock.readLock().lock();
@@ -380,10 +297,7 @@ public class MultiDeviceControlActivity extends ListActivity {
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-
-
-//然后通过一个函数来申请
-
+        //然后通过一个函数来申请
             try {
                 //检测是否有写的权限
                 int permission = ActivityCompat.checkSelfPermission(this,
@@ -395,7 +309,6 @@ public class MultiDeviceControlActivity extends ListActivity {
             } catch (Exception e) {
                 e.printStackTrace();
             }
-
 
         getActionBar().setTitle(R.string.title_multi);
 
@@ -440,12 +353,16 @@ public class MultiDeviceControlActivity extends ListActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        unbindService(mServiceConnection);
-        mBluetoothLeService = null;
+
         //TODO: ...
         for (BluetoothLeData device : mDeviceList) {
             closeOutputStream(device.getDeviceAddress());
+            mBluetoothLeService.disconnect(device.getDeviceAddress());
+            mDeviceConnectionState.put(device.getDeviceAddress(), false);
+            mDeviceDataValue.clear();
         }
+        unbindService(mServiceConnection);
+        mBluetoothLeService = null;
 
     }
 
@@ -468,12 +385,15 @@ public class MultiDeviceControlActivity extends ListActivity {
     protected void onListItemClick(ListView l, View v, int position, long id) {
         final BluetoothLeData device = mMultiDeviceListAdapter.getDevice(position);
         if (device == null) return;
-        if(!mDeviceConnectionState.get(device.getDeviceAddress())) {
+        if(mDeviceConnectionState.get(device.getDeviceAddress()) == null || !mDeviceConnectionState.get(device.getDeviceAddress())) {
             boolean result = mBluetoothLeService.connect(device.getDeviceAddress());
             mDeviceConnectionState.put(device.getDeviceAddress(), result);
             Log.d(TAG, "Connect:" + device.getDataPiece() + "request result=" + result);
         }
-        openOutputStream(device.getDeviceAddress());
+        if(mDeviceConnectionState.get(device.getDeviceAddress())) {
+            openOutputStream(device.getDeviceAddress());
+        }
+        mMultiDeviceListAdapter.notifyDataSetChanged();
     }
 
 
@@ -493,6 +413,8 @@ public class MultiDeviceControlActivity extends ListActivity {
             case R.id.menu_disconnect:
                 for (BluetoothLeData device : mDeviceList) {
                     mBluetoothLeService.disconnect(device.getDeviceAddress());
+                    mDeviceConnectionState.put(device.getDeviceAddress(), false);
+                    closeOutputStream(device.getDeviceAddress());
                     Log.d(TAG, "Disconnect:" + device.getDataPiece());
                 }
                 return true;
@@ -503,12 +425,13 @@ public class MultiDeviceControlActivity extends ListActivity {
                 onBackPressed();
                 return true;
         }
+        mMultiDeviceListAdapter.notifyDataSetChanged();
         return super.onOptionsItemSelected(item);
     }
 
     private class MultiControlGattListAdapter extends BaseAdapter {
-        private ArrayList<BluetoothLeData> mLeDevices;
-        private LayoutInflater mInflator;
+        private final ArrayList<BluetoothLeData> mLeDevices;
+        private final LayoutInflater mInflator;
 
         public MultiControlGattListAdapter() {
             super();
@@ -523,9 +446,7 @@ public class MultiDeviceControlActivity extends ListActivity {
         }
 
         public void removeDevice(BluetoothLeData device) {
-            if (mLeDevices.contains(device)) {
-                mLeDevices.remove(device);
-            }
+            mLeDevices.remove(device);
         }
 
         public BluetoothLeData getDevice(int position) {
@@ -580,71 +501,33 @@ public class MultiDeviceControlActivity extends ListActivity {
 
             viewHolder.deviceAddress.setText(device.getDataPiece() + deviceAddress);
 
-            runOnUiThread(() -> {
-                //Characteristic按键相关代码
-//                    ArrayList<ArrayList<BluetoothGattCharacteristic>> gattCharacteristics = mDeviceGattCharacteristics.get(deviceAddress);
-//                    viewHolder.gattServicesList.setOnChildClickListener(
-//                            (parent, v, groupPosition, childPosition, id) -> {
-//                                if (gattCharacteristics != null) {
-//                                    final BluetoothGattCharacteristic characteristic =
-//                                            gattCharacteristics.get(groupPosition).get(childPosition);
-//                                    final int charaProp = characteristic.getProperties();
-//                                    if ((charaProp & BluetoothGattCharacteristic.PROPERTY_READ) > 0) {
-//                                        // If there is an active notification on a characteristic, clear
-//                                        // it first so it doesn't update the data field on the user interface.
-//                                        if (mDeviceNotifyCharacteristic.get(deviceAddress) != null) {
-//                                            mBluetoothLeService.setCharacteristicNotification(
-//                                                    deviceAddress,
-//                                                    mDeviceNotifyCharacteristic.get(deviceAddress), false);
-//                                            mDeviceNotifyCharacteristic.remove(deviceAddress);
-//                                        }
-//                                        mBluetoothLeService.readCharacteristic(deviceAddress, characteristic);
-//                                        Log.d(TAG, "GATT PROPERTY_READ: " + charaProp);
-//                                    }
-//                                    if ((charaProp & BluetoothGattCharacteristic.PROPERTY_NOTIFY) > 0) {
-//                                        mDeviceNotifyCharacteristic.put(deviceAddress, characteristic);
-//                                        mBluetoothLeService.setCharacteristicNotification(
-//                                                deviceAddress,
-//                                                characteristic, true);
-//                                        Log.d(TAG, "GATT PROPERTY_NOTIFY: " + charaProp);
-//
-//                                    }
-//                                    return true;
-//                                }
-//                                return false;
-//                            });
-//                mReadWriteLock.writeLock().lock();
-//                mDeviceGattServicesListView.put(deviceAddress, viewHolder.gattServicesList);
-//                mReadWriteLock.writeLock().unlock();
-                //mReadWriteLock.readLock().lock();
-                viewHolder.connectionState.setText(mDeviceConnectionState.containsKey(deviceAddress) ?
-                        (mDeviceConnectionState.get(deviceAddress).booleanValue() ?
-                                R.string.connected : R.string.disconnected) : R.string.disconnected);
-                if (mDeviceDataValue.containsKey(deviceAddress)) {
-                    viewHolder.dataValue.setText(mDeviceDataValue.get(deviceAddress));
-                } else {
-                    viewHolder.dataValue.setText(R.string.no_data);
-                }
+            viewHolder.connectionState.setText(mDeviceConnectionState.containsKey(deviceAddress) ?
+                    (mDeviceConnectionState.get(deviceAddress).booleanValue() ?
+                            R.string.connected : R.string.disconnected) : R.string.disconnected);
+            if (mDeviceDataValue.containsKey(deviceAddress) && mDeviceDataValue.get(deviceAddress) != null) {
+                viewHolder.dataValue.setText(mDeviceDataValue.get(deviceAddress));
+            } else {
+                viewHolder.dataValue.setText(R.string.no_data);
+            }
                 //mReadWriteLock.readLock().unlock();
-            });
 
             return view;
         }
     }
 
-    private void displayData(String address, String data) {
-        if (data != null) {
-            //mReadWriteLock.writeLock().lock();
-            mDeviceDataValue.put(address, data);
-            //mReadWriteLock.writeLock().lock();
-        }
-    }
+//    private void displayData(String address, String data) {
+//        if (data != null) {
+//            //mReadWriteLock.writeLock().lock();
+//            mDeviceDataValue.put(address, data);
+//            //mReadWriteLock.writeLock().lock();
+//        }
+//    }
 
-    private void updateConnectionState(String address, boolean connected) {
-        //mReadWriteLock.writeLock().lock();
-        mDeviceConnectionState.put(address, connected);
-        //mReadWrite77.writeLock().unlock();
-    }
+//    private void updateConnectionState(String address, boolean connected) {
+//        //mReadWriteLock.writeLock().lock();
+//        mDeviceConnectionState.put(address, connected);
+//        //mReadWrite77.writeLock().unlock();
+//    }
 
     static class ViewHolder {
         TextView deviceAddress;
@@ -661,131 +544,5 @@ public class MultiDeviceControlActivity extends ListActivity {
         intentFilter.addAction(BluetoothLeService.ACTION_DATA_AVAILABLE);
         intentFilter.addAction(BluetoothLeService.ACTION_DATA_WRITABLE);
         return intentFilter;
-    }
-
-
-    public void setListViewHeightBasedOnChildren(ListView listView) {
-        ListAdapter listAdapter = listView.getAdapter();
-        ViewGroup.LayoutParams params = listView.getLayoutParams();
-        if (listAdapter == null) {
-            // pre-condition
-            return;
-        }
-        int totalHeight = 0;
-        View view;
-        for (int i = 0; i < listAdapter.getCount(); i++) {
-            view = listAdapter.getView(i, null, listView);
-            //宽度为屏幕宽度
-            int i1 = View.MeasureSpec.makeMeasureSpec(ScreenUtils.getScreenWidth(this), View.MeasureSpec.EXACTLY);
-            //根据屏幕宽度计算高度
-            int i2 = View.MeasureSpec.makeMeasureSpec(i1, View.MeasureSpec.UNSPECIFIED);
-            view.measure(i1, i2);
-            totalHeight += view.getMeasuredHeight();
-        }
-        params.height = totalHeight + (listView.getDividerHeight() * (listAdapter.getCount() - 1));
-        listView.setLayoutParams(params);
-    }
-
-    //获得屏幕相关的辅助类
-    public static class ScreenUtils {
-        private ScreenUtils() {
-            /* cannot be instantiated */
-            throw new UnsupportedOperationException("cannot be instantiated");
-        }
-
-        /**
-         * 获得屏幕高度
-         *
-         * @param context
-         * @return
-         */
-        public static int getScreenWidth(Context context) {
-            WindowManager wm = (WindowManager) context
-                    .getSystemService(Context.WINDOW_SERVICE);
-            DisplayMetrics outMetrics = new DisplayMetrics();
-            wm.getDefaultDisplay().getMetrics(outMetrics);
-            return outMetrics.widthPixels;
-        }
-
-        /**
-         * 获得屏幕宽度
-         *
-         * @param context
-         * @return
-         */
-        public static int getScreenHeight(Context context) {
-            WindowManager wm = (WindowManager) context
-                    .getSystemService(Context.WINDOW_SERVICE);
-            DisplayMetrics outMetrics = new DisplayMetrics();
-            wm.getDefaultDisplay().getMetrics(outMetrics);
-            return outMetrics.heightPixels;
-        }
-
-        /**
-         * 获得状态栏的高度
-         *
-         * @param context
-         * @return
-         */
-        public static int getStatusHeight(Context context) {
-
-            int statusHeight = -1;
-            try {
-                Class<?> clazz = Class.forName("com.android.internal.R$dimen");
-                Object object = clazz.newInstance();
-                int height = Integer.parseInt(clazz.getField("status_bar_height")
-                        .get(object).toString());
-                statusHeight = context.getResources().getDimensionPixelSize(height);
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-            return statusHeight;
-        }
-
-        /**
-         * 获取当前屏幕截图，包含状态栏
-         *
-         * @param activity
-         * @return
-         */
-        public static Bitmap snapShotWithStatusBar(Activity activity) {
-            View view = activity.getWindow().getDecorView();
-            view.setDrawingCacheEnabled(true);
-            view.buildDrawingCache();
-            Bitmap bmp = view.getDrawingCache();
-            int width = getScreenWidth(activity);
-            int height = getScreenHeight(activity);
-            Bitmap bp = null;
-            bp = Bitmap.createBitmap(bmp, 0, 0, width, height);
-            view.destroyDrawingCache();
-            return bp;
-
-        }
-
-        /**
-         * 获取当前屏幕截图，不包含状态栏
-         *
-         * @param activity
-         * @return
-         */
-        public static Bitmap snapShotWithoutStatusBar(Activity activity) {
-            View view = activity.getWindow().getDecorView();
-            view.setDrawingCacheEnabled(true);
-            view.buildDrawingCache();
-            Bitmap bmp = view.getDrawingCache();
-            Rect frame = new Rect();
-            activity.getWindow().getDecorView().getWindowVisibleDisplayFrame(frame);
-            int statusBarHeight = frame.top;
-
-            int width = getScreenWidth(activity);
-            int height = getScreenHeight(activity);
-            Bitmap bp = null;
-            bp = Bitmap.createBitmap(bmp, 0, statusBarHeight, width, height
-                    - statusBarHeight);
-            view.destroyDrawingCache();
-            return bp;
-
-        }
-
     }
 }

@@ -267,41 +267,25 @@ public class BluetoothLeService extends Service {
      */
     @RequiresApi(api = Build.VERSION_CODES.M)
     public boolean connect(final String address) {
-
-//        // TODO: save data to file
-//        try {
-//            mDataFileOutStream = openFileOutput("BLE_Received_Data.txt", Context.MODE_APPEND);
-//        } catch (FileNotFoundException e) {
-//            Log.e(TAG, Log.getStackTraceString(e));
-//        }
-//        Log.d(TAG, "Saved file created.");
-//        Toast.makeText(this, R.string.file_opened + " " + getFilesDir().toString() + "BLE_Received_Data.txt",Toast.LENGTH_SHORT).show();
-
         if (mBluetoothAdapter == null || address == null){
             Log.w(TAG, "BluetoothAdapter not initialized or unspecified address.");
             return false;
         }
 
-        // Previously connected device.  Try to reconnect.
-//        if (mBluetoothDeviceAddress != null && address.equals(mBluetoothDeviceAddress)
-//                && mBluetoothGatt != null) {
-//            Log.d(TAG, "Trying to use an existing mBluetoothGatt for connection.");
-//            if (mBluetoothGatt.connect()) {
-//                mConnectionState = STATE_CONNECTING;
-//                return true;
-//            } else {
-//                return false;
-//            }
-//        }
        if (mBluetoothDeviceDict.containsKey(address) && mBluetoothDeviceDict.get(address) != null) {
             Log.d(TAG, "Trying to use an existing mBluetoothGatt for connection.");
             if (mBluetoothDeviceDict.get(address).connect()) {
                 mConnectionState = STATE_CONNECTING;
                 return true;
-            } else {
-                return false;
             }
-        }
+            // ???WHATS THE CODE BEHIND
+             else {
+                return false;
+//                disconnect(address);
+//                connect(address); //recursive
+            }
+       }
+
 
         final BluetoothDevice device = mBluetoothAdapter.getRemoteDevice(address);
         if (device == null) {
@@ -310,7 +294,7 @@ public class BluetoothLeService extends Service {
         }
         // We want to directly connect to the device, so we are setting the autoConnect
         // parameter to false.
-        mBluetoothGatt = device.connectGatt(this, false, getGattCallback(), BluetoothDevice.TRANSPORT_LE);// TODO: should autoConnect be changed?
+        mBluetoothGatt = device.connectGatt(this, true, getGattCallback(), BluetoothDevice.TRANSPORT_LE);// TODO: should autoConnect be changed?
         Log.d(TAG, "Trying to create a new connection.");
         mBluetoothDeviceAddress = address;
 
@@ -336,13 +320,6 @@ public class BluetoothLeService extends Service {
             Log.w(TAG, "BluetoothAdapter not initialized");
             return;
         }
-//        // TODO: close data file
-//        try {
-//            mDataFileOutStream.close();
-//        } catch (IOException e) {
-//            Log.e(TAG, Log.getStackTraceString(e));
-//        }
-//        Toast.makeText(this, R.string.file_closed,Toast.LENGTH_SHORT).show();
 
         mBluetoothGatt.disconnect();
         if (mBluetoothDeviceDict.containsKey(mBluetoothDeviceAddress)) mBluetoothDeviceDict.remove(mBluetoothDeviceAddress);
@@ -355,6 +332,7 @@ public class BluetoothLeService extends Service {
         }
         mBluetoothDeviceDict.get(address).disconnect();
         mBluetoothDeviceDict.remove(address);
+        //gc();
     }
 
     /**
@@ -373,15 +351,10 @@ public class BluetoothLeService extends Service {
             mBluetoothDeviceDict.forEach((s, bluetoothGatt) -> {
                 bluetoothGatt.close();
             });
+            mBluetoothDeviceDict.clear();
         }
-//        // TODO: close data file
-//        try {
-//            mDataFileOutStream.close();
-//        } catch (IOException e) {
-//            Log.e(TAG, Log.getStackTraceString(e));
-//        }
-//        Toast.makeText(this, R.string.file_closed,Toast.LENGTH_SHORT).show();
 
+        mBluetoothDeviceAddress = null;
         mBluetoothGatt = null;
     }
 
