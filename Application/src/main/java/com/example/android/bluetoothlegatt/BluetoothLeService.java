@@ -99,52 +99,54 @@ public class BluetoothLeService extends Service {
 
     // Implements callback methods for GATT events that the app cares about.  For example,
     // connection change and services discovered.
-    private final BluetoothGattCallback mGattCallback = new BluetoothGattCallback() {
-        @Override
-        public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
-            String intentAction;
-            if (newState == BluetoothProfile.STATE_CONNECTED) {
-                intentAction = ACTION_GATT_CONNECTED;
-                mConnectionState = STATE_CONNECTED;
-                broadcastUpdate(gatt.getDevice().getAddress(), intentAction);
-                Log.i(TAG, "Connected to GATT server.");
-                // Attempts to discover services after successful connection.
-                Log.i(TAG, "Attempting to start service discovery:" +
-                        mBluetoothGatt.discoverServices());
+    private BluetoothGattCallback getGattCallback() {
+        return new BluetoothGattCallback() { // TODO: duplicate it for testing connect 2 devices?
+            @Override
+            public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
+                String intentAction;
+                if (newState == BluetoothProfile.STATE_CONNECTED) {
+                    intentAction = ACTION_GATT_CONNECTED;
+                    mConnectionState = STATE_CONNECTED;
+                    broadcastUpdate(gatt.getDevice().getAddress(), intentAction);
+                    Log.i(TAG, "Connected to GATT server.");
+                    // Attempts to discover services after successful connection.
+                    Log.i(TAG, "Attempting to start service discovery:" +
+                            mBluetoothGatt.discoverServices());
 
-            } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
-                intentAction = ACTION_GATT_DISCONNECTED;
-                mConnectionState = STATE_DISCONNECTED;
-                Log.i(TAG, "Disconnected from GATT server.");
-                broadcastUpdate(gatt.getDevice().getAddress(), intentAction);
+                } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
+                    intentAction = ACTION_GATT_DISCONNECTED;
+                    mConnectionState = STATE_DISCONNECTED;
+                    Log.i(TAG, "Disconnected from GATT server.");
+                    broadcastUpdate(gatt.getDevice().getAddress(), intentAction);
+                }
             }
-        }
 
-        @Override
-        public void onServicesDiscovered(BluetoothGatt gatt, int status) {
-            if (status == BluetoothGatt.GATT_SUCCESS) {
-                broadcastUpdate(gatt.getDevice().getAddress(), ACTION_GATT_SERVICES_DISCOVERED);
-            } else {
-                Log.w(TAG, "onServicesDiscovered received: " + status);
+            @Override
+            public void onServicesDiscovered(BluetoothGatt gatt, int status) {
+                if (status == BluetoothGatt.GATT_SUCCESS) {
+                    broadcastUpdate(gatt.getDevice().getAddress(), ACTION_GATT_SERVICES_DISCOVERED);
+                } else {
+                    Log.w(TAG, "onServicesDiscovered received: " + status);
+                }
             }
-        }
 
-        @Override
-        public void onCharacteristicRead(BluetoothGatt gatt,
-                                         BluetoothGattCharacteristic characteristic,
-                                         int status) {
+            @Override
+            public void onCharacteristicRead(BluetoothGatt gatt,
+                                             BluetoothGattCharacteristic characteristic,
+                                             int status) {
 
-            if (status == BluetoothGatt.GATT_SUCCESS) {
+                if (status == BluetoothGatt.GATT_SUCCESS) {
+                    broadcastUpdate(gatt.getDevice().getAddress(), ACTION_DATA_AVAILABLE, characteristic);
+                }
+            }
+
+            @Override
+            public void onCharacteristicChanged(BluetoothGatt gatt,
+                                                BluetoothGattCharacteristic characteristic) {
                 broadcastUpdate(gatt.getDevice().getAddress(), ACTION_DATA_AVAILABLE, characteristic);
             }
-        }
-
-        @Override
-        public void onCharacteristicChanged(BluetoothGatt gatt,
-                                            BluetoothGattCharacteristic characteristic) {
-            broadcastUpdate(gatt.getDevice().getAddress(), ACTION_DATA_AVAILABLE, characteristic);
-        }
-    };
+        };
+    }
 
     private void broadcastUpdate(final String address, final String action) {
         final Intent intent = new Intent(action);
@@ -308,17 +310,19 @@ public class BluetoothLeService extends Service {
         }
         // We want to directly connect to the device, so we are setting the autoConnect
         // parameter to false.
-        mBluetoothGatt = device.connectGatt(this, false, mGattCallback, BluetoothDevice.TRANSPORT_LE);//TODO:CHANGED!
+        mBluetoothGatt = device.connectGatt(this, false, getGattCallback(), BluetoothDevice.TRANSPORT_LE);// TODO: should autoConnect be changed?
         Log.d(TAG, "Trying to create a new connection.");
         mBluetoothDeviceAddress = address;
 
         //add device-gatt to the dict
         if(address != null && mBluetoothGatt != null){
             mBluetoothDeviceDict.put(address, mBluetoothGatt);
+        } else {
+            return false;
         }
 
         mConnectionState = STATE_CONNECTING;
-        return true;
+        return mBluetoothGatt.connect();
     }
 
     /**
@@ -466,6 +470,12 @@ public class BluetoothLeService extends Service {
         if (mBluetoothGatt == null) return null;
 
         return mBluetoothGatt.getServices();
+    }
+
+    public List<BluetoothGattService> getSupportedGattServices(String address) {
+        if (!mBluetoothDeviceDict.containsKey(address)) return null;
+
+        return mBluetoothDeviceDict.get(address).getServices();
     }
 }
 

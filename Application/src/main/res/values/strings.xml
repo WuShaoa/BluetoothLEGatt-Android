@@ -49,5 +49,7 @@
     <string name="uri_initial"> .URI_INITIAL</string>
     <string name="uri_initialized"> Uri for saving is initialized</string>
     <string name="title_multi"> Multi Device Connection</string>
+    <string name="file_created">output file has been created.</string>
+    <string name="file_existed">output file has already existed.</string>
 
 </resources>
