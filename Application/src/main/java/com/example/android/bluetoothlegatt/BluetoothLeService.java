@@ -28,28 +28,15 @@ import android.bluetooth.BluetoothManager;
 import android.bluetooth.BluetoothProfile;
 import android.content.Context;
 import android.content.Intent;
-import android.net.Uri;
 import android.os.Binder;
 import android.os.Build;
 import android.os.IBinder;
-import android.provider.DocumentsContract;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
 import android.support.annotation.RequiresApi;
 import android.util.Log;
-import android.widget.Toast;
 
-import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.Serializable;
-import java.util.Collection;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
-import java.util.function.BiConsumer;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Service for managing connection and data communication with a GATT server hosted on a
@@ -62,7 +49,7 @@ public class BluetoothLeService extends Service {
     private BluetoothAdapter mBluetoothAdapter;
     private String mBluetoothDeviceAddress;
     private BluetoothGatt mBluetoothGatt;
-    private Map<String, BluetoothGatt> mBluetoothDeviceDict = new HashMap<>();
+    private ConcurrentHashMap<String, BluetoothGatt> mBluetoothDeviceDict = new ConcurrentHashMap<>();
     private BluetoothLeData mPairData;
     private BluetoothGattDescriptor mDescriptor;
     private int mConnectionState = STATE_DISCONNECTED;
@@ -99,7 +86,7 @@ public class BluetoothLeService extends Service {
 
     // Implements callback methods for GATT events that the app cares about.  For example,
     // connection change and services discovered.
-    private BluetoothGattCallback getGattCallback() {
+    private synchronized BluetoothGattCallback getGattCallback() {
         return new BluetoothGattCallback() { // TODO: duplicate it for testing connect 2 devices?
             @Override
             public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
@@ -111,11 +98,14 @@ public class BluetoothLeService extends Service {
                     Log.i(TAG, "Connected to GATT server.");
                     // Attempts to discover services after successful connection.
                     Log.i(TAG, "Attempting to start service discovery:" +
-                            mBluetoothGatt.discoverServices());
+                            gatt.discoverServices());//very important!! discover services for specific gatt!!!
 
                 } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                     intentAction = ACTION_GATT_DISCONNECTED;
                     mConnectionState = STATE_DISCONNECTED;
+
+                    close(gatt.getDevice().getAddress());
+
                     Log.i(TAG, "Disconnected from GATT server.");
                     broadcastUpdate(gatt.getDevice().getAddress(), intentAction);
                 }
@@ -148,13 +138,13 @@ public class BluetoothLeService extends Service {
         };
     }
 
-    private void broadcastUpdate(final String address, final String action) {
+    private synchronized void broadcastUpdate(final String address, final String action) {
         final Intent intent = new Intent(action);
         intent.putExtra(EXTRA_ADDRESS, address);
         sendBroadcast(intent);
     }
 
-    private void broadcastUpdate(final String address, final String action,
+    private synchronized void broadcastUpdate(final String address, final String action,
                                  final BluetoothGattCharacteristic characteristic) {
         final Intent intent = new Intent(action);
 
@@ -266,7 +256,7 @@ public class BluetoothLeService extends Service {
      *         callback.
      */
     @RequiresApi(api = Build.VERSION_CODES.M)
-    public boolean connect(final String address) {
+    public synchronized boolean connect(final String address) {//add sync lock
         if (mBluetoothAdapter == null || address == null){
             Log.w(TAG, "BluetoothAdapter not initialized or unspecified address.");
             return false;
@@ -280,7 +270,8 @@ public class BluetoothLeService extends Service {
             }
             // ???WHATS THE CODE BEHIND
              else {
-                return false;
+                 this.close(address);
+                 //return false;
 //                disconnect(address);
 //                connect(address); //recursive
             }
@@ -288,25 +279,27 @@ public class BluetoothLeService extends Service {
 
 
         final BluetoothDevice device = mBluetoothAdapter.getRemoteDevice(address);
+
         if (device == null) {
             Log.w(TAG, "Device not found.  Unable to connect.");
             return false;
         }
         // We want to directly connect to the device, so we are setting the autoConnect
         // parameter to false.
-        mBluetoothGatt = device.connectGatt(this, true, getGattCallback(), BluetoothDevice.TRANSPORT_LE);// TODO: should autoConnect be changed?
+        BluetoothGatt mmBluetoothGatt = device.connectGatt(this, false, getGattCallback(), BluetoothDevice.TRANSPORT_LE);// TODO: should autoConnect be changed?
         Log.d(TAG, "Trying to create a new connection.");
         mBluetoothDeviceAddress = address;
 
         //add device-gatt to the dict
-        if(address != null && mBluetoothGatt != null){
-            mBluetoothDeviceDict.put(address, mBluetoothGatt);
+        if(address != null && mmBluetoothGatt != null){
+
         } else {
             return false;
         }
-
+        mmBluetoothGatt.connect();
         mConnectionState = STATE_CONNECTING;
-        return mBluetoothGatt.connect();
+        mBluetoothGatt = mmBluetoothGatt;
+        return true;
     }
 
     /**
@@ -322,10 +315,11 @@ public class BluetoothLeService extends Service {
         }
 
         mBluetoothGatt.disconnect();
+
         if (mBluetoothDeviceDict.containsKey(mBluetoothDeviceAddress)) mBluetoothDeviceDict.remove(mBluetoothDeviceAddress);
     }
 
-    public void disconnect(final String address) {
+    public synchronized void disconnect(final String address) {
         if (mBluetoothAdapter == null || !mBluetoothDeviceDict.containsKey(address)) {
             Log.w(TAG, "BluetoothAdapter not initialized or device released");
             return;
@@ -358,6 +352,22 @@ public class BluetoothLeService extends Service {
         mBluetoothGatt = null;
     }
 
+    public synchronized void close(String address) {
+        if (mBluetoothDeviceDict.isEmpty()) {
+            mBluetoothGatt.close();
+            return;
+        }
+        mBluetoothGatt.close();
+
+        if(mBluetoothDeviceDict.containsKey(address)) {
+            mBluetoothDeviceDict.get(address).close();
+            mBluetoothDeviceDict.remove(address);
+        }
+
+        mBluetoothDeviceAddress = null;
+        mBluetoothGatt = null;
+    }
+
     /**
      * Request a read on a given {@code BluetoothGattCharacteristic}. The read result is reported
      * asynchronously through the {@code BluetoothGattCallback#onCharacteristicRead(android.bluetooth.BluetoothGatt, android.bluetooth.BluetoothGattCharacteristic, int)}
@@ -374,7 +384,7 @@ public class BluetoothLeService extends Service {
     }
 
     public void readCharacteristic(String address, BluetoothGattCharacteristic characteristic) {
-        if (mBluetoothAdapter == null || mBluetoothGatt == null
+        if (mBluetoothAdapter == null
                 || !mBluetoothDeviceDict.containsKey(address)) {
             Log.w(TAG, "BluetoothAdapter not initialized");
             return;
@@ -412,8 +422,7 @@ public class BluetoothLeService extends Service {
 
     public void setCharacteristicNotification(String address, BluetoothGattCharacteristic characteristic,
                                               boolean enabled) {
-        if (mBluetoothAdapter == null || mBluetoothGatt == null
-                || !mBluetoothDeviceDict.containsKey(address)) {
+        if (mBluetoothAdapter == null || !mBluetoothDeviceDict.containsKey(address)) {
             Log.w(TAG, "BluetoothAdapter not initialized");
             return;
         }

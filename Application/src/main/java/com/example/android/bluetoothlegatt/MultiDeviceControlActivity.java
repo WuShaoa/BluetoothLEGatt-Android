@@ -3,7 +3,6 @@ package com.example.android.bluetoothlegatt;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.ListActivity;
-import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothGattCharacteristic;
 import android.bluetooth.BluetoothGattService;
 import android.content.BroadcastReceiver;
@@ -13,26 +12,19 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.ServiceConnection;
 import android.content.pm.PackageManager;
-import android.graphics.Bitmap;
-import android.graphics.Rect;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
-import android.os.ParcelFileDescriptor;
 import android.support.annotation.RequiresApi;
 import android.support.v4.app.ActivityCompat;
-import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.WindowManager;
 import android.widget.BaseAdapter;
-import android.widget.ExpandableListView;
-import android.widget.ListAdapter;
 import android.widget.ListView;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -41,9 +33,9 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.Objects;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class MultiDeviceControlActivity extends ListActivity {
     private final static String TAG = MultiDeviceControlActivity.class.getSimpleName();
@@ -63,13 +55,13 @@ public class MultiDeviceControlActivity extends ListActivity {
     private BluetoothLeService mBluetoothLeService;
     private boolean mConnected;
     private ArrayList<BluetoothLeData> mDeviceList;
-    private HashMap<String, Boolean> mDeviceConnectionState = new HashMap<>();
-    private HashMap<String, String> mDeviceDataValue = new HashMap<>();
+    private ConcurrentHashMap<String, Boolean> mDeviceConnectionState = new ConcurrentHashMap<>();
+    private ConcurrentHashMap<String, String> mDeviceDataValue = new ConcurrentHashMap<>();
     //private HashMap<String, ExpandableListView> mDeviceGattServicesListView = new HashMap<>();
     //private HashMap<String, ArrayList<ArrayList<BluetoothGattCharacteristic>>> mDeviceGattCharacteristics =
     //        new HashMap<>();
-    private HashMap<String, BluetoothGattCharacteristic> mDeviceNotifyCharacteristic = new HashMap<>();
-    private HashMap<String, FileOutputStream> mDeviceOutputFileDict = new HashMap<>();
+    private ConcurrentHashMap<String, BluetoothGattCharacteristic> mDeviceNotifyCharacteristic = new ConcurrentHashMap<>();
+    private ConcurrentHashMap<String, FileOutputStream> mDeviceOutputFileDict = new ConcurrentHashMap<>();
     //private ReentrantReadWriteLock mReadWriteLock = new ReentrantReadWriteLock();
 
 //   private Uri mInitialUri;
@@ -154,31 +146,27 @@ public class MultiDeviceControlActivity extends ListActivity {
 //        } else {
 //            Toast.makeText(this, R.string.file_existed, Toast.LENGTH_SHORT).show();
 //        }
-        createFile(address);
-        runOnUiThread(()-> {
+
+        //runOnUiThread(()-> {
             //激活TX特征Notify
             // DONE: - determine NOTIFY or READ!! : NOTIFY
-            if (!mDeviceNotifyCharacteristic.containsKey(address)) {
+            runOnUiThread(()->{if (!mDeviceNotifyCharacteristic.containsKey(address)) {
                for (BluetoothGattService service : mBluetoothLeService.getSupportedGattServices(address)) {
                    for (BluetoothGattCharacteristic characteristic : service.getCharacteristics()) {
-                       if (characteristic.getUuid().toString().equalsIgnoreCase(SampleGattAttributes.BLE_UART_TX)) {//TO IGNORE CASE
+                       if (characteristic.getUuid().equals(UUID.fromString(SampleGattAttributes.BLE_UART_TX))) {//TO IGNORE CASE
                            mDeviceNotifyCharacteristic.put(address, characteristic);
-                            mBluetoothLeService.setCharacteristicNotification(
-                                    address,
-                                    characteristic,
-                                   true);
-                           Log.d(TAG, "GATT PROPERTY_NOTIFY: " + address);
                        }
                    }
                }
-            } else {
-                mBluetoothLeService.setCharacteristicNotification(
-                        address,
-                        mDeviceNotifyCharacteristic.get(address),
-                        true);
-            Log.d(TAG, "GATT PROPERTY_NOTIFY: " + address);
-        }
-        });
+//            } else {
+//                mBluetoothLeService.setCharacteristicNotification(
+//                        address,
+//                        mDeviceNotifyCharacteristic.get(address),
+//                        true);
+//            Log.d(TAG, "GATT PROPERTY_NOTIFY: " + address);
+        }});
+
+        createFile(address);
     }
 
     //must called when OutPutStream should be closed on disconnected...
@@ -242,21 +230,28 @@ public class MultiDeviceControlActivity extends ListActivity {
             if (BluetoothLeService.ACTION_GATT_CONNECTED.equals(action)) {
                 //mConnected = true;
                 mDeviceConnectionState.put(address, true);//updateConnectionState(address, true);
+                //open a FileOutputStream
+                openOutputStream(address);
                 invalidateOptionsMenu();
             } else if (BluetoothLeService.ACTION_GATT_DISCONNECTED.equals(action)) {
                 //mConnected = false;
                 mDeviceConnectionState.put(address, false);//updateConnectionState(address, false);
                 mDeviceDataValue.remove(address);
                 invalidateOptionsMenu();
-                clearUI(address);
+                //clearUI(address);
                 //TODO: ...
                 closeOutputStream(address);
             } else if (BluetoothLeService.ACTION_GATT_SERVICES_DISCOVERED.equals(action)) {
                 // Show all the supported services and characteristics on the user interface.
                 //displayGattServices(address, mBluetoothLeService.getSupportedGattServices(address));
 
-                //set Notify Characteristic & open a FileOutputStream
-                openOutputStream(address);
+                //set Notify Characteristic
+                mBluetoothLeService.setCharacteristicNotification(
+                        address,
+                        mDeviceNotifyCharacteristic.get(address),
+                        true);
+                Toast.makeText(context, "Set Characteristic Notification: " + address, Toast.LENGTH_SHORT).show();
+                Log.d(TAG, "GATT PROPERTY_NOTIFY: " + address);
             } else if (BluetoothLeService.ACTION_DATA_AVAILABLE.equals(action)) {
                 String data = intent.getStringExtra(BluetoothLeService.EXTRA_DATA);
                 mDeviceDataValue.put(address, data);//displayData(address, data); // decouple data receive and data display (buffer)
@@ -382,17 +377,24 @@ public class MultiDeviceControlActivity extends ListActivity {
 
     @RequiresApi(api = Build.VERSION_CODES.M)
     @Override
+
     protected void onListItemClick(ListView l, View v, int position, long id) {
         final BluetoothLeData device = mMultiDeviceListAdapter.getDevice(position);
         if (device == null) return;
         if(mDeviceConnectionState.get(device.getDeviceAddress()) == null || !mDeviceConnectionState.get(device.getDeviceAddress())) {
             boolean result = mBluetoothLeService.connect(device.getDeviceAddress());
-            mDeviceConnectionState.put(device.getDeviceAddress(), result);
             Log.d(TAG, "Connect:" + device.getDataPiece() + "request result=" + result);
         }
-        if(mDeviceConnectionState.get(device.getDeviceAddress())) {
-            openOutputStream(device.getDeviceAddress());
-        }
+//        if(mDeviceConnectionState.get(device.getDeviceAddress())) {//if already connected, then set char notification
+//            mBluetoothLeService.setCharacteristicNotification(
+//                    device.getDeviceAddress(),
+//                    mDeviceNotifyCharacteristic.get(device.getDeviceAddress()),
+//                    true);
+//            Toast.makeText(this, "Set Characteristic Notification: " + device.getDeviceAddress(), Toast.LENGTH_SHORT).show();
+//            Log.d(TAG, "GATT PROPERTY_NOTIFY: " + device.getDeviceAddress());
+////            mBluetoothLeService.disconnect(device.getDeviceAddress());
+////            Log.d(TAG, "Disconnect:" + device.getDataPiece());
+//        }
         mMultiDeviceListAdapter.notifyDataSetChanged();
     }
 
@@ -403,19 +405,22 @@ public class MultiDeviceControlActivity extends ListActivity {
     public boolean onOptionsItemSelected(MenuItem item) {
         switch (item.getItemId()) {
             case R.id.menu_connect:
-                boolean result;
                 for (BluetoothLeData device : mDeviceList) {
-                    result = mBluetoothLeService.connect(device.getDeviceAddress());
-                    mDeviceConnectionState.put(device.getDeviceAddress(), result);
+                    runOnUiThread(()->{
+                    boolean result = mBluetoothLeService.connect(device.getDeviceAddress());
+                    mMultiDeviceListAdapter.notifyDataSetChanged();
                     Log.d(TAG, "Connect:" + device.getDataPiece() + "request result=" + result);
+                    });
                 }
                 return true;
             case R.id.menu_disconnect:
                 for (BluetoothLeData device : mDeviceList) {
+                    runOnUiThread(()->{
                     mBluetoothLeService.disconnect(device.getDeviceAddress());
-                    mDeviceConnectionState.put(device.getDeviceAddress(), false);
                     closeOutputStream(device.getDeviceAddress());
+                    mMultiDeviceListAdapter.notifyDataSetChanged();
                     Log.d(TAG, "Disconnect:" + device.getDataPiece());
+                    });
                 }
                 return true;
             //case R.id.menu_set_file:
@@ -425,7 +430,6 @@ public class MultiDeviceControlActivity extends ListActivity {
                 onBackPressed();
                 return true;
         }
-        mMultiDeviceListAdapter.notifyDataSetChanged();
         return super.onOptionsItemSelected(item);
     }
 
