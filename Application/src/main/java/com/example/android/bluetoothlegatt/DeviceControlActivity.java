@@ -31,13 +31,11 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.ServiceConnection;
-import android.graphics.Bitmap;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
 import android.os.ParcelFileDescriptor;
-import android.provider.DocumentsContract;
 import android.support.annotation.RequiresApi;
 import android.support.v4.app.NotificationCompat;
 import android.support.v4.app.NotificationManagerCompat;
@@ -53,12 +51,9 @@ import android.widget.Toast;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Locale;
 
 /**
  * For a given BLE device, this Activity provides the user interface to connect, display data,
@@ -93,6 +88,7 @@ public class DeviceControlActivity extends Activity {
     private Uri mInitialUri;
     private ParcelFileDescriptor mParcelFileDescriptor;
     private FileOutputStream mFileOutputStream;
+    private BleUartDataReceiver mDataReceiver;
 
     // for open and saving data
     private void createFile() {
@@ -213,9 +209,15 @@ public class DeviceControlActivity extends Activity {
                 displayGattServices(mBluetoothLeService.getSupportedGattServices());
             } else if (BluetoothLeService.ACTION_DATA_AVAILABLE.equals(action)) {
                 String data = intent.getStringExtra(BluetoothLeService.EXTRA_DATA);
-                displayData(data);
+
                 // write to file
                 //TODO:...
+                //displayData(data);
+                runOnUiThread(() ->{
+                    mDataReceiver.receiveData(data.getBytes());
+                    mDataReceiver.parseData();
+                });
+
                 if (mFileOutputStream != null) {
                     try {
                         // add date information to output file
@@ -281,6 +283,15 @@ public class DeviceControlActivity extends Activity {
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.gatt_services_characteristics);
+        BleUartDataReceiver.BleUartDataReceiverCallback callback = new BleUartDataReceiver.BleUartDataReceiverCallback() {
+            @Override
+            public void onBleUartDataReceived(BleUartDataReceiver.BleUartData data) {
+                if(data.isParsed()) {
+                    displayData(data.toString());
+                }
+            }
+        };
+        mDataReceiver = new BleUartDataReceiver(callback);
 
         final Intent intent = getIntent();
         mDeviceName = intent.getStringExtra(EXTRAS_DEVICE_NAME);

@@ -1,8 +1,7 @@
 package com.example.android.bluetoothlegatt;
 
-import java.io.DataInput;
-import java.io.IOException;
-import java.util.ArrayList;
+import android.annotation.SuppressLint;
+import android.util.Log;
 
 import java.util.concurrent.ConcurrentLinkedQueue;
 
@@ -10,6 +9,7 @@ public class BleUartDataReceiver {
     private ConcurrentLinkedQueue<StringBuffer> lines_buffer = new ConcurrentLinkedQueue<>();
     private StringBuffer line = new StringBuffer();
     private BleUartDataReceiverCallback cb;
+    private final static String TAG = "BleUartDataReceiver";
 
     public BleUartDataReceiver(BleUartDataReceiverCallback callback){
         cb = callback;
@@ -28,26 +28,30 @@ public class BleUartDataReceiver {
         } else {
             line.append(temp);
         }
+        Log.i(TAG, "data received.");
     }
 
-    public synchronized BleUartData parseData() {
-        String l;
+    public synchronized void parseData() {
         if(!lines_buffer.isEmpty()){
+            String l;
+            BleUartData parsedData = new BleUartData();
             l = new String(lines_buffer.poll());
             String[] words = l.split(" +");
-            BleUartData parsedData = new BleUartData(words);
+            parsedData.fromStringArray(words);
+            Log.i(TAG, "data parsed.");
             cb.onBleUartDataReceived(parsedData); //callback
         }
     }
 
 
     public static class BleUartData {
-        int timeStamp;
-        float value_ao, voltage_ao, press_ao; //压力
-        float attitude_roll, attitude_pitch, attitude_yaw; //欧拉角
-        float acc_x, acc_y, acc_z; //加速度
-        float gyro_x, gyro_y, gyro_z; //角速度
-        final static int COUNT = 13;
+        public int timeStamp;
+        public float value_ao, voltage_ao, press_ao; //压力
+        public float attitude_roll, attitude_pitch, attitude_yaw; //欧拉角
+        public float acc_x, acc_y, acc_z; //加速度
+        public float gyro_x, gyro_y, gyro_z; //角速度
+        public final static int COUNT = 13;
+        private boolean isInit = true;
 
         public BleUartData(){
             timeStamp = 0;
@@ -63,23 +67,12 @@ public class BleUartDataReceiver {
             gyro_x = 0;
             gyro_y = 0;
             gyro_z = 0; //角速度
+            isInit = true;
         }
 
-        public BleUartData(String[] data) throws Error{
-            timeStamp = 0;
-            value_ao = 0;
-            voltage_ao = 0;
-            press_ao = 0; //压力
-            attitude_roll = 0;
-            attitude_pitch = 0;
-            attitude_yaw = 0; //欧拉角
-            acc_x = 0;
-            acc_y = 0;
-            acc_z = 0; //加速度
-            gyro_x = 0;
-            gyro_y = 0;
-            gyro_z = 0; //角速度
+        public void fromStringArray(String[] data){
             try {
+                isInit = false;
                 timeStamp = Integer.parseInt(data[0]);
                 value_ao = Float.parseFloat(data[1]);
                 voltage_ao = Float.parseFloat(data[2]);
@@ -96,6 +89,19 @@ public class BleUartDataReceiver {
             } catch (ArrayIndexOutOfBoundsException e){
                 //容错，因已初始化为零
             }
+        }
+
+        public float[] toFloatList(){
+            return new float[]{attitude_roll, attitude_pitch, attitude_yaw, acc_x, acc_y, acc_z, gyro_x, gyro_y, gyro_z};
+        }
+
+        @SuppressLint("DefaultLocale")
+        public String toString(){
+            return String.format("%d, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f",timeStamp,value_ao,voltage_ao,press_ao,attitude_roll,attitude_pitch,attitude_yaw,acc_x,acc_y,acc_z,gyro_x,gyro_y,gyro_z);
+        }
+
+        public boolean isParsed(){
+            return !isInit;
         }
     }
 
