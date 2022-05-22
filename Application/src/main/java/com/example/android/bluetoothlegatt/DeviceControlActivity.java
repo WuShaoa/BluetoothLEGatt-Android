@@ -43,6 +43,8 @@ import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
 import android.widget.ExpandableListView;
 import android.widget.SimpleExpandableListAdapter;
 import android.widget.TextView;
@@ -52,6 +54,7 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 
@@ -61,6 +64,7 @@ import java.util.List;
  * communicates with {@code BluetoothLeService}, which in turn interacts with the
  * Bluetooth LE API.
  */
+
 public class DeviceControlActivity extends Activity {
     private final static String TAG = DeviceControlActivity.class.getSimpleName();
 
@@ -75,7 +79,15 @@ public class DeviceControlActivity extends Activity {
     private String mDeviceName;
     private String mDeviceAddress;
     private ExpandableListView mGattServicesList;
+    private EchartView mLineChart;
+    boolean mEnableRefresh = false;
     private BluetoothLeService mBluetoothLeService;
+    private static final int LENGTH = 10;
+    private static int mCounter = 0;
+    private Integer[] x = new Integer[10];//Done: java.lang.IndexOutOfBoundsException
+    private Float[] y = new Float[10];
+    private Float predictResult = 0f;
+
     private ArrayList<ArrayList<BluetoothGattCharacteristic>> mGattCharacteristics =
             new ArrayList<ArrayList<BluetoothGattCharacteristic>>();
     private boolean mConnected = false;
@@ -89,6 +101,7 @@ public class DeviceControlActivity extends Activity {
     private ParcelFileDescriptor mParcelFileDescriptor;
     private FileOutputStream mFileOutputStream;
     private BleUartDataReceiver mDataReceiver;
+    private MotionClassifier mMotionClassifier;
 
     // for open and saving data
     private void createFile() {
@@ -230,7 +243,7 @@ public class DeviceControlActivity extends Activity {
                     }
                 } //else { Toast.makeText(this, R.string.file_error, Toast.LENGTH_SHORT).show(); }
                 // TODO：处理危险范围...再显示
-                notifyData(intent.getStringExtra(BluetoothLeService.EXTRA_DATA));
+                //notifyData(intent.getStringExtra(BluetoothLeService.EXTRA_DATA));
             }
         }
     };
@@ -279,19 +292,62 @@ public class DeviceControlActivity extends Activity {
         mDataField.setText(R.string.no_data);
     }
 
+    @RequiresApi(api = Build.VERSION_CODES.N)
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.gatt_services_characteristics);
-        BleUartDataReceiver.BleUartDataReceiverCallback callback = new BleUartDataReceiver.BleUartDataReceiverCallback() {
-            @Override
-            public void onBleUartDataReceived(BleUartDataReceiver.BleUartData data) {
-                if(data.isParsed()) {
-                    displayData(data.toString());
+
+        try {
+            mMotionClassifier = new MotionClassifier(this);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        // initialize x,y
+        Arrays.fill(x, 0);
+        Arrays.fill(y,0f);
+
+        BleUartDataReceiver.BleUartDataReceiverCallback callback = data -> {
+            if(data.isParsed()) {
+                displayData(data.toString());
+
+                //EChart
+                if(mCounter == LENGTH) {
+                    x = Arrays.copyOfRange(x, 1, LENGTH);
+                    x = Arrays.copyOf(x, LENGTH);
+                    x[LENGTH-1] = data.timeStamp;
+
+                    y = Arrays.copyOfRange(y, 1, LENGTH);
+                    y = Arrays.copyOf(y, LENGTH);
+                    y[LENGTH-1] = mMotionClassifier.classifyMotion(data.toFloatList())[0];//data.press_ao
+                } else {
+                    x[mCounter] = data.timeStamp;
+                    y[mCounter] = mMotionClassifier.classifyMotion(data.toFloatList())[0]; //;
+                    mCounter++;
+                }
+
+                if(mEnableRefresh && x[0] != null && y[0] != null){
+                    runOnUiThread(this::refreshLineChart);
                 }
             }
         };
         mDataReceiver = new BleUartDataReceiver(callback);
+
+        mLineChart = findViewById(R.id.data_chart);
+        mLineChart.setWebViewClient(new WebViewClient() {
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                super.onPageFinished(view, url);
+                //refreshLineChart();
+                //最好在h5页面加载完毕后再加载数据，防止html的标签还未加载完成，不能正常显示
+                runOnUiThread(()-> {
+                    mEnableRefresh = true;
+                });
+            }
+        });
+
+
 
         final Intent intent = getIntent();
         mDeviceName = intent.getStringExtra(EXTRAS_DEVICE_NAME);
@@ -315,6 +371,17 @@ public class DeviceControlActivity extends Activity {
         mParcelFileDescriptor = null;
         mFileOutputStream = null;
     }
+
+    private void refreshLineChart(){
+//        Object[] x = new Object[]{
+//                "1", "2", "3", "4", "5", "6", "7"
+//        };
+//        Object[] y = new Object[]{
+//                820, 932, 901, 934, 1290, 1330, 1320
+//        };
+        mLineChart.refreshEchartsWithOption(EchartOptionUtil.getLineChartOptions(x, y));
+    }
+
 
     @RequiresApi(api = Build.VERSION_CODES.M)
     @Override
