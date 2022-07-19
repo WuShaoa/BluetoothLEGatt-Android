@@ -34,7 +34,7 @@ public class MotionClassifier {
     private List<String> labelList = Arrays.asList("Falling", "Other");
 
     /** A ByteBuffer to hold image data, to be feed into Tensorflow Lite as inputs. */
-    private float[][][] sensorDataInput = new float[DIM_BATCH_SIZE][1][DIM_DATA_SIZE];;
+    private float[][][] sensorDataInput = new float[DIM_BATCH_SIZE][1][DIM_DATA_SIZE];//(batch, time-step, input-dim)
     private float[][] predictionOutput;
 
 
@@ -64,7 +64,7 @@ public class MotionClassifier {
         //printTopKLabels(builder);
 
         if (tflite == null) {
-            Log.e(TAG, "Image classifier has not been initialized; Skipped.");
+            Log.e(TAG, "Classifier has not been initialized; Skipped.");
 //            builder.append(new SpannableString("Uninitialized Classifier."));
         }
 
@@ -95,8 +95,17 @@ public class MotionClassifier {
     }
 
     public void setModelByPath(String path) throws IOException {
+        String temp = mModelPath;
         mModelPath = path;
-        initializeModel();
+
+        try {
+            MappedByteBuffer tfLiteModel = FileUtil.loadMappedFile(activity, mModelPath);
+            tflite = new Interpreter(tfLiteModel, tfliteOptions);
+
+        } catch (IOException e) {
+            // TODO：ERROR
+            mModelPath = temp;
+        }
     }
 
     public List<String> getLabels() {

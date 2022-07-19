@@ -323,7 +323,7 @@ public class DeviceControlActivity extends Activity {
                     y[LENGTH-1] = mMotionClassifier.classifyMotion(data.toFloatList())[0];//data.press_ao
                 } else {
                     x[mCounter] = data.timeStamp;
-                    y[mCounter] = mMotionClassifier.classifyMotion(data.toFloatList())[0]; //;
+                    y[mCounter] = mMotionClassifier.classifyMotion(data.toFloatList())[0]; //TODO: buffer & classify
                     mCounter++;
                 }
 

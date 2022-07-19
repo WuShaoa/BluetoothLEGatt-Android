@@ -86,13 +86,13 @@ public class BleUartDataReceiver {
                 gyro_x = Float.parseFloat(data[10]);
                 gyro_y = Float.parseFloat(data[11]);
                 gyro_z = Float.parseFloat(data[12]); //角速度
-            } catch (ArrayIndexOutOfBoundsException | NumberFormatException e00000000000){
+            } catch (ArrayIndexOutOfBoundsException | NumberFormatException e){
                 //容错，因已初始化为零
             }
         }
 
         public static float[] uniform(float[] array){
-            float min=0f , max=0f;
+            float min=0f , max=1f;
             float[] temp = Arrays.copyOf(array, array.length);
 
             for (float v : array){
@@ -102,7 +102,7 @@ public class BleUartDataReceiver {
 
             int count = 0;
             for (float v : array){
-                float v_i = (v + min) / (max - min);
+                float v_i = (v + min) / (max - min);//zero divided!!!
                 temp[count] = v_i;
                 count++;
             }
